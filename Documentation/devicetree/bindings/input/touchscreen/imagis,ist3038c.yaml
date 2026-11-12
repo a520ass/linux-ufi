@@ -33,6 +33,10 @@ properties:
   vddio-supply:
     description: Power supply regulator for the I2C bus
 
+  reset-gpios:
+    maxItems: 1
+    description: GPIO connected to the reset line (active low)
+
   linux,keycodes:
     description: Keycodes for the touch keys
     minItems: 2

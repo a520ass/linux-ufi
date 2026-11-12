@@ -3,6 +3,7 @@
 #include <linux/bitfield.h>
 #include <linux/bits.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/input.h>
 #include <linux/input/mt.h>
@@ -59,6 +60,7 @@ struct imagis_ts {
 	struct input_dev *input_dev;
 	struct touchscreen_properties prop;
 	struct regulator_bulk_data supplies[2];
+	struct gpio_desc *reset_gpio;
 	u32 keycodes[5];
 	int num_keycodes;
 };
@@ -169,6 +171,9 @@ static void imagis_power_off(void *_ts)
 {
 	struct imagis_ts *ts = _ts;
 
+	if (ts->reset_gpio)
+		gpiod_set_value_cansleep(ts->reset_gpio, 1);
+
 	regulator_bulk_disable(ARRAY_SIZE(ts->supplies), ts->supplies);
 }
 
@@ -181,6 +186,13 @@ static int imagis_power_on(struct imagis_ts *ts)
 		return error;
 
 	msleep(IST3038C_CHIP_ON_DELAY_MS);
+
+	if (ts->reset_gpio) {
+		gpiod_set_value_cansleep(ts->reset_gpio, 1);
+		usleep_range(1000, 2000);
+		gpiod_set_value_cansleep(ts->reset_gpio, 0);
+		msleep(IST3038C_CHIP_ON_DELAY_MS);
+	}
 
 	return 0;
 }
@@ -315,6 +327,11 @@ static int imagis_probe(struct i2c_client *i2c)
 		dev_err(dev, "missing chip data\n");
 		return -EINVAL;
 	}
+
+	ts->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(ts->reset_gpio))
+		return dev_err_probe(dev, PTR_ERR(ts->reset_gpio),
+				     "failed to get reset gpio\n");
 
 	error = imagis_init_regulators(ts);
 	if (error) {
